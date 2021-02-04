@@ -1,0 +1,19 @@
+{
+  "name": "tweesic",
+  "version": "1.0.0",
+  "description": "Tweesic, music out of tweets noise.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/virteal/tweesic.git"
+  },
+  "author": "Jean Hugues Robert",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/virteal/tweesic/issues"
+  },
+  "homepage": "https://github.com/virteal/tweesic#readme"
+}
