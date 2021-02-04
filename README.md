@@ -2,7 +2,7 @@
  
  Music out of tweets noise, de la musique depuis des tweets bruyants.
  
- Le prototype en cours de création est accessible sur Google Firebase [Tweesic](https://tweesic.kudocracy.com/s)
+ Le prototype en cours de création est accessible sur Google Firebase [Tweesic](https://tweesic.kudocracy.com/)
  
  # Historique
  
