@@ -1,10 +1,8 @@
 # Tweesic
  
- Tweesic, music out of tweets noise.
+ Music out of tweets noise, de la musique depuis des tweets bruyants.
  
- Tweesic, de la musique depuis des tweets bruyants.
- 
- Le prototype en cours de création est accessible chez Google Firebase [Tweesic](https://tweesic-kudocracy.web.app/)
+ Le prototype en cours de création est accessible sur Google Firebase [Tweesic](https://tweesic-kudocracy.web.app/)
  
  # Historique
  
