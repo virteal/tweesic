@@ -1,6 +1,21 @@
 {
   "hosting": {
     "public": "firebase",
+    "rewrites": [ {
+      "source": "/helloWorld",
+      "function": "helloWorld"
+    } ],
+    "headers": [ 
+      {
+        "source" : "**",
+        "headers" : [
+          {
+            "key" : "Access-Control-Allow-Origin",
+            "value" : "*"
+          }
+        ]
+      }
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
