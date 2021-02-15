@@ -43,6 +43,7 @@
     </div>
     <p id="load">Firebase SDK Loading&hellip;</p>
     <div id="hello">Hello?</div>
+    <div id="fragments"></div>
 
     <script>
       document.addEventListener('DOMContentLoaded', function() {
@@ -105,7 +106,21 @@
         
         const hello = firebase.functions().httpsCallable( "hello" );
         hello().then( ( result )=>{
-          hello_el.textContent = result.data;
+          if( result.data.fragments ){
+            for( const fragment of result.data.fragments ){
+              try{
+                if( fragment.id ){
+                  document.querySelector( "#" + fragment.id ).textContent = fragment.content;
+                }else{
+                  console.log( "Unknown fragment type in hello()" );
+                }
+              }catch( err ){
+                console.error( err );
+              }
+            }
+          }else{
+            hello_el.textContent = result.data;
+          }
         }).catch(( err )=>{
           hello_el.textContent = `Error: ${err}`;
         });

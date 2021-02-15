@@ -10,12 +10,14 @@ const cors = require('cors')({origin: true});
 exports.helloWorld = functions.https.onRequest( ( request, response )=>{
   cors( request, response, ()=>{
     functions.logger.info( "helloWorld() logs!", { structuredData: true } );
-    response.json( { data: "HhlloWorld() from Tweesic firebase nodejs side!" } );
+    response.json( { data: "HelloWorld() from Tweesic firebase nodejs side!" } );
   });
 });
 
 // Callable function
 exports.hello = functions.https.onCall( ( data, context ) => {
-  functions.logger.info( "hello() logs!", { structuredData: true } );
-  return "hello() from Tweesic firebase nodejs side!";
+  return { fragments: [
+    { id: "hello", content: "hello() from Tweesic firebase nodejs side!" },
+    { id: "fragments", content: "fragments ready!" }
+  ] };
 });
