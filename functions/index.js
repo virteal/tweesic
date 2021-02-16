@@ -21,3 +21,15 @@ exports.hello = functions.https.onCall( ( data, context ) => {
     { id: "fragments", content: "fragments ready!" }
   ] };
 });
+
+const Tweesic = {};
+
+Tweesic.domain = "suvranu";
+
+Tweesic.get_config = function(){ return Tweesic; }
+
+Tweesic.ui1twit = function(){
+  console.log( "Tweesic started on domain " + Tweesic.domain );
+}
+
+require( "./kudocracy.js" ).start( Tweesic );
