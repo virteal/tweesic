@@ -45,16 +45,20 @@ const Machine = {};
 
 Ephemeral.Machine = Machine;
 Machine.current = Machine;
+Machine.main = Machine;
+
+var TwitterKeys = require( "./twitter_keys" ).keys;
 
 class Persona {
 
   constructor( label ){
     this.label = label;
     this.id = "#" + label;
-    this.twitter_consumer_key = "2L3Uzjz9WfxNkn91n2zJjTSbu";
-    this.twitter_consumer_secret = "4iJivJdL4DhRAF8V7aW7zXW0j8zC2NzLmBDBgBbF7gAqLgEVZM";
-    this.twitter_access_token = "876928762985803776-47766fkgRqeS4SaVkYY6IhGKnDH1CZ8";
-    this.twitter_access_token_secret = "DNYiLTvIxq07zP3mcHn2fNtUPQPp05RXfpj7cDXhVMu1h";
+    var keys = TwitterKeys; // file ./twitter_keys.js
+    this.twitter_consumer_key        = keys.consumer_key;
+    this.twitter_consumer_secret     = keys.consumer_secret;
+    this.twitter_access_token        = keys.access_token;
+    this.twitter_access_token_secret = keys.access_token_secret;
   }
 
   toString(){ return this.label; }

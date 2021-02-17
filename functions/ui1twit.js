@@ -2,7 +2,7 @@
 //    First UI for Kudocracy, test/debug UI, HTTP based, Twitter aspects
 //
 // Dec 4 2014 by @jhr
-// Feb 16 2020 by @jhr, extracted from Kudocracy, injected into Tweesic
+// Feb 16 2021 by @jhr, extracted from Kudocracy, injected into Tweesic
 
 "use strict";
 
@@ -511,15 +511,15 @@ TwitterUser.prototype.add_friend = function( twitter_user ){
     followers[ this.id ] = this;
     twitter_user.followers_count++;
     FollowershipCount++;
-    if( twitter_user.twitter_user_data ){
-      if( twitter_user.twitter_user_data.followers_count
-      <   twitter_user.followers_count )
+    var data = twitter_user.twitter_user_data;
+    if( data ){
+      if( data.followers_count < twitter_user.followers_count )
       {
         nde&&bug(
           "BUG, local followers count greater than twitter's for",
           "" + twitter_user + ",",
           "is", twitter_user.followers_count,
-          "vs", twitter_user.twitter_user_data.followers_count
+          "vs twitter's", data.followers_count
         );
       }
     }
@@ -740,7 +740,7 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
     
   }
   
-  var twit = AllMonitoredPersonas[ 0 ].twit;
+  var twitter_lite = AllMonitoredPersonas[ 0 ].twitter_lite;
 
   TimeFriendCollectorBusy = now;
   var previous_time_last_update = that.time_friends_collected;
@@ -751,191 +751,209 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
     tweet_mode: "extended",
     stringify_ids: "true"
   };
+
+  function status_error( endpoint, result ){
+    if( result.status === 401 ){
+      trace( "Twitter API error, " + endpoint + ", 401, unauthorized" );
+      return true;
+    }
+    if( result.status === 410 ){
+      trace( "Twitter API error, " + endpoint + ", 401, gone" );
+      return true;
+    }
+    trace( "Twitter API error, " + endpoint + ",", result.status );
+    return false;
+  }
+
+  function get( endpoint, params, fthen, fcatch ){
+    twitter_lite.get( endpoint, params ).then( fthen ).catch( function( result ){
+      if( status_error( endpoint, result ) )return;
+      var code = 0;
+      if( result.errors ){
+        code = result.errors[0];
+      }
+      return fcatch( code, result );
+    });
+  }
+
+  // Get info about this user
+  var user_endpoint = "users/";
   if( this.id ){
-    params.user_id = this.id;
+    // v1 params.user_id = this.id;
+    user_endpoint += this.id;
     trace( "Twitter, updating user, by id, " + this );
   }else{
-    params.screen_name = this.screen_name;
+    // v1 params.screen_name = this.screen_name;
+    user_endpoint += "by/username/" + this.screen_name;
     trace( "Twitter, updating user, by screen_name, " + this );
   }
-  
-  // Get info about this user
-  twit.get( "users/show", params,
-    function( err, data, response ){
-      if( err ){
-        if( err.code === 50 ){
-          // TODO: deleted user;
-          trace( "TODO: deleted user " + that );
-          that.deregister( true /* deleted */ );
-          return;
-        }
-        console.warn( "Twitter, get users/show for " + that + " error", err.code );
-        return;
-      }
-      that.set_twitter_user_data( data );
+  get( user_endpoint, params, function( data ){
+    that.set_twitter_user_data( data );
+  }, function( code, result ){
+    if( code === 50 ){
+      // TODO: deleted user;
+      trace( "TODO: deleted user " + that );
+      that.deregister( true /* deleted */ );
+      return;
     }
-  );
+    console.warn( "Twitter, get " + endpoint + " for " + that + " error", result );
+  });
   
-  // Get info about friends of this users
-  twit.get( "friends/ids", params,
-    
-    function( err, data, response ){
-      
-      if( err ){
-        if( err.code === 34 ){
-          // ToDo: deleted user
-          return;
-        }
-        if( err.code === 88 ){
-          that.time_friends_collected = previous_time_last_update;
-          if( !TimeRateExcess ){
-            console.warn( "Twitter, rate excess collecting friends" );
-          }
-          TimeRateExcess = l8.update_now();
-           // ToDo: exponential backoff based on usage rate
-          // Extract limit from headers
-          // Increase or decrease delay depending on available credit
-          return reschedule();
-        }
-        TimeRateExcess = 0;
-        console.warn( "Twitter, error when collecting friends", err );
-        return;
-      }
-      
-      if( !data ){
-        trace( "Missing data in collect_friends()" );
-        return reschedule();
-      }
-      
-      // Process list of ids
-      trace( 
-        "" + data.ids.length,
-        "ids received in collect_friends() for user " + that
-      );
-      TimeRateExcess = 0;
-      
-      that.set_friends_using_ids( data.ids );
-      
+  // Get info about friends/following of this users
+  var friends_endpoint = "users/" + this.id + "/following";
+  get( friends_endpoint, params, function( data ){
+
+    if( !data ){
+      trace( "Missing data in collect_friends()" );
+      return reschedule();
     }
-  );
+      
+    // Process list of ids
+    trace( 
+      "" + data.ids.length,
+      "ids received in collect_friends() for user " + that
+    );
+    TimeRateExcess = 0;
+      
+    that.set_friends_using_ids( data.ids );
+      
+  }, function( code, result ){
+
+    if( code === 34 ){
+      // ToDo: deleted user
+      return;
+    }
+
+    if( code === 88 ){
+      that.time_friends_collected = previous_time_last_update;
+      if( !TimeRateExcess ){
+        console.warn( "Twitter, rate excess collecting friends" );
+      }
+      TimeRateExcess = l8.update_now();
+       // ToDo: exponential backoff based on usage rate
+      // Extract limit from headers
+      // Increase or decrease delay depending on available credit
+      return reschedule();
+    }
+    TimeRateExcess = 0;
+    console.warn( "Twitter, get " + friends_endpoint + ", error when collecting friends.", code, result );
+  
+  });
   
   // Get info about followers of this users
-  twit.get( "followers/ids", params,
-    
-    function( err, data, response ){
-      
-      if( err ){
-        if( err.code === 34 ){
-          // ToDo: deleted user
-          return;
-        }
-        if( err.code === 88 ){
-          if( !TimeRateExcess ){
-            console.warn( "Twitter, rate excess collecting followers" );
-          }
-          TimeRateExcess = l8.update_now();
-           // ToDo: exponential backoff based on usage rate
-          // Extract limit from headers
-          // Increase or decrease delay depending on available credit
-          return reschedule();
-        }
-        TimeRateExcess = 0;
-        console.warn( "Twitter, error when collecting followers", err );
-        return;
-      }
-      
-      if( !data ){
-        trace( "Missing data in collect_friends() for followers" );
-        return reschedule();
-      }
-      
-      // Process list of ids
-      trace( 
-        "" + data.ids.length, 
-        "followers ids received in collect_friends() for user " + that
-      );
-      TimeRateExcess = 0;
-      
-      // Detect added and removed followers
-      var old_followers = map();
-      var old_followers_count = 0;
-      var new_followers = map();
-      var new_followers_count = 0;
-      
-      // Build map of old followers
-      var current_followers = that.followers;
-      for( var old_follower_id in current_followers ){
-        old_followers[ old_follower_id ] = old_follower_id;
-        old_followers_count++;
-      }
-      var added_followers = [];
-      var removed_followers = [];
+  var followers_endpoint = "users/" + this.id + "/followers";
+  get( followers_endpoint, params, function( data ){
 
-      // For each follower
-      var list = data.ids;
-      var id;
-      var follower_user;
-      for( var ii = 0 ; ii < list.length ; ii++ ){
-        id = "" + list[ ii ];
-        follower_user = AllTwitterUsers[ id ];
-        // Skip if not part of the community yet
-        if( !follower_user )continue;
-        that.add_follower( follower_user );
-        new_followers[ id ] = id;
-        new_followers_count++;
-        // Detect new follower
-        if( !old_followers[ id ] ){
-          added_followers.push( follower_user );
-          // trace( "New friend " + friend_user, "of "+ that );
-        }
-      }
-      
-      // Detect removed followers, when possible
-      if( list.length < 5000 ){
-        var follower;
-        for( id in old_followers ){
-          if( new_followers[ id ] )continue;
-          follower = AllTwitterUsers[ id ];
-          removed_followers.push( follower );
-          // trace( "Removed follower " + follower, "of " + that );
-          if( follower === TwitterUser.get_community() ){
-            trace(
-              "BUG? Community " + follower,
-              "follower of " + that,
-              "not a follower anymore ?"
-            );
-            var community_id = follower.id;
-            trace(
-              "Community id is", community_id,
-              "screen_name:", follower.screen_name
-            );
-            var found = false;
-            for( ii = 0 ; ii < list.length ; ii++ ){
-              if( community_id === "" + list[ ii ] ){
-                trace( "BUG, community found at index", ii, "on", list.length );
-                break;
-              }
-            }
-            if( found )continue;
-          }
-          that.remove_follower( follower );
-        }
-      }else{
-        // Can't compute it, use known value
-        new_followers_count = that.followers_count;
-      }
-      
-      trace( 
-        "Done collecting followers of " + that + ".", 
-        that.followers_count, "followers,",
-        "was " + old_followers_count + ",",
-        "became " + new_followers_count + ",",
-        added_followers.length, "added,",
-        removed_followers.length, "removed"
-      );
-
+    if( !data ){
+      trace( "Missing data in collect_friends() for followers" );
+      return reschedule();
     }
-  );
+      
+    // Process list of ids
+    trace( 
+      "" + data.ids.length, 
+      "followers ids received in collect_friends() for user " + that
+    );
+    TimeRateExcess = 0;
+      
+    // Detect added and removed followers
+    var old_followers = map();
+    var old_followers_count = 0;
+    var new_followers = map();
+    var new_followers_count = 0;
+      
+    // Build map of old followers
+    var current_followers = that.followers;
+    for( var old_follower_id in current_followers ){
+      old_followers[ old_follower_id ] = old_follower_id;
+      old_followers_count++;
+    }
+    var added_followers = [];
+    var removed_followers = [];
+
+    // For each follower
+    var list = data.ids;
+    var id;
+    var follower_user;
+    for( var ii = 0 ; ii < list.length ; ii++ ){
+      id = "" + list[ ii ];
+      follower_user = AllTwitterUsers[ id ];
+      // Skip if not part of the community yet
+      if( !follower_user )continue;
+      that.add_follower( follower_user );
+      new_followers[ id ] = id;
+      new_followers_count++;
+      // Detect new follower
+      if( !old_followers[ id ] ){
+        added_followers.push( follower_user );
+        // trace( "New friend " + friend_user, "of "+ that );
+      }
+    }
+      
+    // Detect removed followers, when possible
+    if( list.length < 5000 ){
+      var follower;
+      for( id in old_followers ){
+        if( new_followers[ id ] )continue;
+        follower = AllTwitterUsers[ id ];
+        removed_followers.push( follower );
+        // trace( "Removed follower " + follower, "of " + that );
+        if( follower === TwitterUser.get_community() ){
+          trace(
+            "BUG? Community " + follower,
+            "follower of " + that,
+            "not a follower anymore ?"
+          );
+          var community_id = follower.id;
+          trace(
+            "Community id is", community_id,
+            "screen_name:", follower.screen_name
+          );
+          var found = false;
+          for( ii = 0 ; ii < list.length ; ii++ ){
+            if( community_id === "" + list[ ii ] ){
+              trace( "BUG, community found at index", ii, "on", list.length );
+              break;
+            }
+          }
+          if( found )continue;
+        }
+        that.remove_follower( follower );
+      }
+    }else{
+      // Can't compute it, use known value
+      new_followers_count = that.followers_count;
+    }
+      
+    trace( 
+      "Done collecting followers of " + that + ".", 
+      that.followers_count, "followers,",
+      "was " + old_followers_count + ",",
+      "became " + new_followers_count + ",",
+      added_followers.length, "added,",
+      removed_followers.length, "removed"
+    );
+
+  }, function( code, result ){
+
+    if( code === 34 ){
+      // ToDo: deleted user
+      return;
+    }
+    if( code === 88 ){
+      if( !TimeRateExcess ){
+        console.warn( "Twitter, rate excess collecting followers" );
+      }
+      TimeRateExcess = l8.update_now();
+      // ToDo: exponential backoff based on usage rate
+      // Extract limit from headers
+      // Increase or decrease delay depending on available credit
+      return reschedule();
+    }
+    TimeRateExcess = 0;
+    console.warn( "Twitter, error when collecting followers", result );
+
+  });
   
   return true;
   
@@ -1629,8 +1647,8 @@ TwitterUser.load = function(){
  *  MonitoredPersona class
  */
 
-// npm install twit - https://github.com/ttezel/twit
-var Twit = require( "twit" );
+// npm install twitter-lite
+var TwitterLite = require( "twitter-lite" );
 
 var AllPersonas = [];
 var AllMonitoredPersonas = [];
@@ -1643,8 +1661,19 @@ function MonitoredPersona( persona, domain ){
   this.persona = persona;
   this.domain_name = this.screen_name = persona.id.substring( 1 );
   this.domain  = domain;
+  this.is_main_domain = false;
   this.machine = null;
-  this.twit    = new Twit({
+  this.twitter_lite = new TwitterLite({
+    version:              "2",
+    consumer_key:         domain.twitter_consumer_key,
+    consumer_secret:      domain.twitter_consumer_secret,
+    access_token:         domain.twitter_access_token,
+    access_token_secret:  domain.twitter_access_token_secret,
+    extension:            false // avoid adding .json after endpoint if v2
+  });
+  // For streams, currently broken
+  this.twitter_lite1 = new TwitterLite({
+    version:              "1.1",
     consumer_key:         domain.twitter_consumer_key,
     consumer_secret:      domain.twitter_consumer_secret,
     access_token:         domain.twitter_access_token,
@@ -1659,6 +1688,7 @@ function MonitoredPersona( persona, domain ){
     { 
       screen_name: persona.id.substring( 1 ),
       // ToDo: this is hardcoded for user @suvranu
+      // See https://codeofaninja.com/tools/find-twitter-id 
       id: "876928762985803776"
     },
     persona
@@ -1672,9 +1702,9 @@ function MonitoredPersona( persona, domain ){
   var config_domain = config.domain;
   if( config_domain.toLowerCase() === persona.id.substring( 1 ) ){
     trace( "Twitter, start monitoring main domain", persona.label );
-    this.domain_name = "";
+    this.is_main_domain = true;
     this.machine = Ephemeral.Machine.main;
-    this.open_user_stream();
+    // Broken this.open_user_stream();
     return;
   }
 
@@ -1710,6 +1740,7 @@ MonitoredPersonaProto.toString = function(){
 
 
 var event_names = [
+  "error",
   "tweet",
   "delete",
   "limit",
@@ -1763,6 +1794,8 @@ event_names.forEach( function( event_name ){
           err, err.stack
         );
       }
+    }else if( event_name == "error" ){
+      trace( "Twitter stream error", event );
     }else{
       trace( 'Twitter unmanaged event "' + event_name + '" about ' + this );
     }
@@ -1772,7 +1805,7 @@ event_names.forEach( function( event_name ){
 
 MonitoredPersonaProto.open_user_stream = function(){
   var stream = this.stream 
-  = this.twit.stream( "user", {
+  = this.twitter_lite1.stream( "user", {
     with: "followings",
     stall_warning: "true",
     stringify_ids: "true",
@@ -1833,17 +1866,20 @@ MonitoredPersonaProto.process_friends = function( event ){
   } );
   // Get info on next 100 friends (twitter limit, 100 friends per request)
   event.lookup_start = start + 100;
-  nde&&bug( "Twitter, send users/lookup request about " + this );
+  de&&bug( "Twitter, send users/lookup request about " + this );
   var params = { 
     user_id: friends_slice, 
     include_entities: false,
     tweet_mode: "extended",
     stringify_ids: "true"
   };
-  this.twit.get(
-    "users/lookup", params,
-    MonitoredPersonaProto.process_users_lookup_response.bind( that, event )
-  );
+  var promise = this.twitter_lite.get( "users/lookup", params );
+  promise.then( function( result ){
+    that.process_users_lookup_response( event, null, result );
+  }).catch( function( result ){
+    var err = result.errors[0];
+    that.process_user_lookup_response( event, err, null );
+  });
   // Postpone collecting friends while collecting community members
   TimeFriendCollectorBusy = l8.update_now();
   
@@ -2057,10 +2093,16 @@ MonitoredPersonaProto.process_delete = function( event ){
 
 MonitoredPersonaProto.send_direct_message = function( to, text ){
   trace( "Twitter, send direct message to", to, "text:", text );
-  this.twit.post( "direct_messages/new", {
+  var that = this;
+  this.twitter_lite.post( "direct_messages/new", {
     screen_name: to.screen_name || to,
     text: text.substring( 0, 280 )
-  }, MonitoredPersonaProto.process_response.bind( this ) );
+  }).then( function( result ){
+    that.process_response( null, result );
+  }).catch( function( result ){
+    var err = result.errors[0];
+    that.process_response( err, null )
+  });
 };
 
 
@@ -2358,7 +2400,7 @@ function send( to, text, url ){
   if( !url ){
     url = text || "";
   }
-  if( sender.domain_name ){
+  if( !sender.is_main_domain ){
     if( url.indexOf( "?" ) !== -1 ){
       url = url.replace( "?", "?kudo=" + sender.domain_name + "&" );
     }else{
