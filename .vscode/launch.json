@@ -5,10 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "pwa-chrome",
+            "type": "node",
             "request": "launch",
-            "name": "Open index.html",
-            "url": "http://localhost:5000/index.html"
+            "name": "Launch Program",
+            "skipFiles": ["<node_internals>/**"],
+            "program": "${workspaceFolder}\\functions\\index.js"
         }
     ]
 }

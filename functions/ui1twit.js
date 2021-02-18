@@ -10,7 +10,7 @@
  *  Some global imports
  */
 
-const IsTweesic = true
+const IsTweesic = false;
  
 var fs = !IsTweesic && require( "fs" );
 
@@ -71,7 +71,7 @@ function TwitterUser( twitter_user_data, persona ){
   var id = twitter_user_data.id_str || twitter_user_data.id;
   var screen_name = twitter_user_data.screen_name;
 
-  // trace( "Twitter, create user", id );
+  trace( "Twitter, create user", id, screen_name );
   this.id = id;
   this.screen_name = screen_name;
   
@@ -348,9 +348,10 @@ TwitterUser.prototype.set_twitter_user_data = function( data ){
   this.twitter_user_data = data;
   this.time_twitter_user_data = l8.now;
   
-  this.screen_name = data.screen_name;
-  TwitterUsersByScreenName[ data.screen_name.toLowerCase() ] = this;
+  this.screen_name = data.username || data.screen_name; // ToDo: v2 uses .username
+  TwitterUsersByScreenName[ this.screen_name.toLowerCase() ] = this;
 
+  // ToDo: v2
   var created_at = data.created_at;
   if( created_at ){
     var date = new Date( Date.parse( created_at.replace( /( \+)/, ' UTC$1' ) ) );
@@ -746,7 +747,8 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
   var previous_time_last_update = that.time_friends_collected;
   that.time_friends_collected = now;
   
-  var params = {
+  var params = null;
+  var params1 = {
     include_entities: "false",
     tweet_mode: "extended",
     stringify_ids: "true"
@@ -766,7 +768,14 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
   }
 
   function get( endpoint, params, fthen, fcatch ){
-    twitter_lite.get( endpoint, params ).then( fthen ).catch( function( result ){
+    trace( "Query Twitter API", endpoint, params );
+    if( params && Object.keys( params ).length == 0 ){
+      params = undefined;
+    }
+    twitter_lite.get( endpoint, params ).then( function( result ){
+      trace( "Twitter API success, " + endpoint );
+      fthen( result );
+    }).catch( function( result ){
       if( status_error( endpoint, result ) )return;
       var code = 0;
       if( result.errors ){
@@ -787,8 +796,11 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
     user_endpoint += "by/username/" + this.screen_name;
     trace( "Twitter, updating user, by screen_name, " + this );
   }
-  get( user_endpoint, params, function( data ){
-    that.set_twitter_user_data( data );
+  var get_user_params = {
+    /* expansions: */ 
+  }
+  get( user_endpoint, get_user_params, function( result ){
+    that.set_twitter_user_data( result.data );
   }, function( code, result ){
     if( code === 50 ){
       // TODO: deleted user;
@@ -796,13 +808,17 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
       that.deregister( true /* deleted */ );
       return;
     }
-    console.warn( "Twitter, get " + endpoint + " for " + that + " error", result );
+    console.warn( "Twitter, get " + user_endpoint + " for " + that + " error", result );
   });
   
   // Get info about friends/following of this users
   var friends_endpoint = "users/" + this.id + "/following";
-  get( friends_endpoint, params, function( data ){
+  var users_following_params = {
+    max_results: 1000
+  };
+  get( friends_endpoint, users_following_params, function( result ){
 
+    var data = result.data;
     if( !data ){
       trace( "Missing data in collect_friends()" );
       return reschedule();
@@ -810,12 +826,17 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
       
     // Process list of ids
     trace( 
-      "" + data.ids.length,
+      "" + data.length,
       "ids received in collect_friends() for user " + that
     );
     TimeRateExcess = 0;
       
-    that.set_friends_using_ids( data.ids );
+    try{
+      that.set_friends_using_ids( data );
+    }catch( err ){
+      trace( "Error in set_friends_using_ids" );
+      debugger;
+    }
       
   }, function( code, result ){
 
@@ -841,9 +862,13 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
   });
   
   // Get info about followers of this users
+  var users_followers_params = {
+    max_results: 1000
+  };
   var followers_endpoint = "users/" + this.id + "/followers";
-  get( followers_endpoint, params, function( data ){
+  get( followers_endpoint, users_followers_params, function( result ){
 
+    var data = result.data;
     if( !data ){
       trace( "Missing data in collect_friends() for followers" );
       return reschedule();
@@ -851,7 +876,7 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
       
     // Process list of ids
     trace( 
-      "" + data.ids.length, 
+      "" + data.length, 
       "followers ids received in collect_friends() for user " + that
     );
     TimeRateExcess = 0;
@@ -872,11 +897,11 @@ TwitterUser.prototype.collect_friends = function( dont_schedule ){
     var removed_followers = [];
 
     // For each follower
-    var list = data.ids;
+    var list = data;
     var id;
     var follower_user;
     for( var ii = 0 ; ii < list.length ; ii++ ){
-      id = "" + list[ ii ];
+      id = list[ ii ].id;
       follower_user = AllTwitterUsers[ id ];
       // Skip if not part of the community yet
       if( !follower_user )continue;
@@ -978,17 +1003,21 @@ TwitterUser.prototype.set_friends_using_ids = function( ids ){
   // For each friend
   var list = ids;
   var id;
+  var username;
+  var name;
   var friend_user;
   
   for( var ii = 0 ; ii < list.length ; ii++ ){
   
-    id = "" + list[ ii ];
+    id = list[ ii ].id;
     friend_user = AllTwitterUsers[ id ];
   
     // Unknown? skip or add to the community
     if( !friend_user ){
       if( !this.is_community() )continue;
-      friend_user = TwitterUser.register( { id: id } );
+      username = list[ ii ].username;
+      name = list[ ii ].name;
+      friend_user = TwitterUser.register( { id: id, screen_name: username, name: name } );
     }
     
     this.add_friend( friend_user );
@@ -1663,11 +1692,12 @@ function MonitoredPersona( persona, domain ){
   this.domain  = domain;
   this.is_main_domain = false;
   this.machine = null;
+  console.log( "Creating MonitoredPersona", persona, domain );
   this.twitter_lite = new TwitterLite({
     version:              "2",
     consumer_key:         domain.twitter_consumer_key,
     consumer_secret:      domain.twitter_consumer_secret,
-    access_token:         domain.twitter_access_token,
+    access_token_key:     domain.twitter_access_token_key,
     access_token_secret:  domain.twitter_access_token_secret,
     extension:            false // avoid adding .json after endpoint if v2
   });
@@ -1676,7 +1706,7 @@ function MonitoredPersona( persona, domain ){
     version:              "1.1",
     consumer_key:         domain.twitter_consumer_key,
     consumer_secret:      domain.twitter_consumer_secret,
-    access_token:         domain.twitter_access_token,
+    access_token_key:     domain.twitter_access_token_key,
     access_token_secret:  domain.twitter_access_token_secret
   });
 
@@ -1867,13 +1897,14 @@ MonitoredPersonaProto.process_friends = function( event ){
   // Get info on next 100 friends (twitter limit, 100 friends per request)
   event.lookup_start = start + 100;
   de&&bug( "Twitter, send users/lookup request about " + this );
-  var params = { 
+  var params = null;
+  var params1 = { 
     user_id: friends_slice, 
     include_entities: false,
     tweet_mode: "extended",
     stringify_ids: "true"
   };
-  var promise = this.twitter_lite.get( "users/lookup", params );
+  var promise = this.twitter_lite1.get( "users/lookup", params1 );
   promise.then( function( result ){
     that.process_users_lookup_response( event, null, result );
   }).catch( function( result ){
@@ -2094,7 +2125,7 @@ MonitoredPersonaProto.process_delete = function( event ){
 MonitoredPersonaProto.send_direct_message = function( to, text ){
   trace( "Twitter, send direct message to", to, "text:", text );
   var that = this;
-  this.twitter_lite.post( "direct_messages/new", {
+  this.twitter_lite1.post( "direct_messages/new", {
     screen_name: to.screen_name || to,
     text: text.substring( 0, 280 )
   }).then( function( result ){

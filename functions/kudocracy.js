@@ -57,7 +57,7 @@ class Persona {
     var keys = TwitterKeys; // file ./twitter_keys.js
     this.twitter_consumer_key        = keys.consumer_key;
     this.twitter_consumer_secret     = keys.consumer_secret;
-    this.twitter_access_token        = keys.access_token;
+    this.twitter_access_token_key    = keys.access_token_key;
     this.twitter_access_token_secret = keys.access_token_secret;
   }
 

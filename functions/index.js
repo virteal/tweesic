@@ -1,3 +1,6 @@
+// index.js
+//   That's the entry point on the server side
+
 const functions = require("firebase-functions");
 const admin = require('firebase-admin');
 admin.initializeApp();
@@ -33,3 +36,4 @@ Tweesic.ui1twit = function(){
 }
 
 require( "./kudocracy.js" ).start( Tweesic );
+
