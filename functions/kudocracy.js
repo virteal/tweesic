@@ -90,11 +90,18 @@ exports.start = function( scope ){
   var test_persona = new Persona( scope.domain )
   Persona.all = [ test_persona ];
 
+  var twittrust = require( "./twittrust.js" );
+  twittrust.start( scope );
+
   var ui1twit = require( "./ui1twit.js" );
   ui1twit.start( scope );
-  
+
   // Start the favorite tweets monitoring
-  // var twittrust = require( "./twittrust.js" );
-  // twittrust.start( scope );
-   
+  var twittrust = require( "./twittrust.js" );
+  twittrust.start( scope );
+
+  inox();
+
+}
+
 }
